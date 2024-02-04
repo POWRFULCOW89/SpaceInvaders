@@ -76,6 +76,8 @@ class Bullet extends FigureGameObject {
 class Cannon extends FigureGameObject {
 
     static horizontalVelocity = 20
+    static width = 20
+    static height = 10
 
     static clamp(min, value, max) {
         if (value < min) return min
@@ -111,6 +113,8 @@ class Alien extends FigureGameObject {
         this.alienType = alienType
     }
 
+    static width = 20
+    static height = 12
     static horizontalSpeed = 0.5
     static xBoundary = 30
 
@@ -126,11 +130,19 @@ document.addEventListener('DOMContentLoaded', function (e) {
      */
     let context;
 
+    let bunkerShape = [
+        [0, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 0],
+        [1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0, 1],
+    ]
+
     let bunkers =
         new Array(4).fill(null).map(
-            (bunker, i) => new Array(3).fill(null).map(
-                (bunkerRow, j) => new Array(3).fill(null).map(
-                    (bunkerPart, k) => new Bunker(i * Bunker.separation + (Bunker.partWidth * j), Bunker.yOffset + k * Bunker.partHeight, Bunker.color, Bunker.partWidth, Bunker.partHeight)
+            (bunker, i) => new Array(bunkerShape[0].length).fill(null).map(
+                (bunkerRow, j) => new Array(bunkerShape.length).fill(null).map(
+                    (bunkerPart, k) => bunkerShape[k][j] ? new Bunker(i * Bunker.separation + (Bunker.partWidth * j), Bunker.yOffset + k * Bunker.partHeight, Bunker.color, Bunker.partWidth, Bunker.partHeight) : null
                 )
             )
         );
@@ -142,16 +154,21 @@ document.addEventListener('DOMContentLoaded', function (e) {
     let bullets = []
 
     let aliens = [
-        ...new Array(2).fill(0).map((_, i) => new Array(11).fill(0).map((_, j) => new Alien(j * 30, i * 30, '#ff0000', 20, 20, AlienType.STRONG))),
-        ...new Array(3).fill(0).map((_, i) => new Array(11).fill(0).map((_, j) => new Alien(j * 30, i * 30 + 60, '#00ff00', 20, 20, AlienType.WEAK)))
+        ...new Array(2).fill(0).map((_, i) => new Array(11).fill(0).map((_, j) => new Alien(j * 30, i * 30, '#ff0000', Alien.width, Alien.height, AlienType.STRONG))),
+        ...new Array(3).fill(0).map((_, i) => new Array(11).fill(0).map((_, j) => new Alien(j * 30, i * 30 + 60, '#00ff00', Alien.width, Alien.height, AlienType.WEAK)))
     ]
 
-    // console.table(aliens)
+    let points = 0
+    let lives = 3
+
+
 
     let keyPressed = null;
     let player = null
     let alienAttackInterval = null
     let alienDirection = Direction.RIGHT
+    let alienImage = document.createElement('img');
+    alienImage.src = 'img/alien.png'
 
 
     window.onload = init;
@@ -170,19 +187,16 @@ document.addEventListener('DOMContentLoaded', function (e) {
         canvas.height = window.innerHeight;
 
         player = new Cannon(0, canvas.height - 300, '#666666', 20, 20);
-        // console.log(canvas)
 
-        // alienAttackInterval = setInterval(alienAttack, 1000)
+        alienAttackInterval = setInterval(alienAttack, 1000)
 
         window.requestAnimationFrame(gameLoop);
     }
 
     function gameLoop(event) {
-        // console.log(keyPressed)
-
-        // console.log(Math.sin(event / 3))
-
         if (!gameRunning) return
+
+        respawnAliens()
 
         moveAliens()
 
@@ -197,9 +211,22 @@ document.addEventListener('DOMContentLoaded', function (e) {
         requestAnimationFrame(gameLoop);
     }
 
-    function alienAttack() {
-        console.log('attack')
+    function respawnAliens() {
 
+        let aliensDead = aliens.flat().flat().find(alien => !alien.destroyed) === undefined
+
+        if (aliensDead) {
+            aliens = [
+                ...new Array(2).fill(0).map((_, i) => new Array(11).fill(0).map((_, j) => new Alien(j * 30, i * 30, '#ff0000', Alien.width, Alien.height, AlienType.STRONG))),
+                ...new Array(3).fill(0).map((_, i) => new Array(11).fill(0).map((_, j) => new Alien(j * 30, i * 30 + 60, '#00ff00', Alien.width, Alien.height, AlienType.WEAK)))
+            ]
+        }
+    }
+
+    function alienAttack() {
+
+
+        // TODO: Solamente puede atacar el primero de cada columna, de abajo hacia arriba, aliens vivos
         for (let i = 0; i < aliens.length; i++) {
             const alienRow = aliens[4];
 
@@ -255,6 +282,17 @@ document.addEventListener('DOMContentLoaded', function (e) {
         for (let i = 0; i < bullets.length; i++) {
             const bullet = bullets[i];
             if (bullet.destroyed) continue;
+
+            if (bullet.direction.equals(Direction.DOWN)) {
+                if (bullet.x + bullet.width >= player.x && player.x >= bullet.x) {
+
+                    if (bullet.y >= player.y) {
+                        lives--;
+                        player.x = 30
+                    }
+                }
+            }
+
             for (let i = 0; i < bunkers.length; i++) {
                 const bunker = bunkers[i];
                 for (let j = 0; j < bunker.length; j++) {
@@ -262,7 +300,7 @@ document.addEventListener('DOMContentLoaded', function (e) {
                     for (let k = 0; k < bunkerRow.length; k++) {
                         const bunkerPart = bunkerRow[k];
 
-                        if (bunkerPart.destroyed) continue
+                        if (!bunkerPart || bunkerPart.destroyed) continue
 
                         if ((bullet.x + bullet.width >= bunkerPart.x && bunkerPart.x >= bullet.x)) {
 
@@ -307,6 +345,27 @@ document.addEventListener('DOMContentLoaded', function (e) {
                             alien.destroyed = true
                             bullet.destroyed = true
                             bullets.splice(i, 1)
+
+
+
+                            let basePoints = 50;
+
+                            let multiplier = 1
+
+                            switch (alien.type) {
+                                case AlienType.WEAK:
+                                    multiplier = 1
+                                    break;
+                                case AlienType.STRONG:
+                                    multiplier = 1.5;
+                                case AlienType.BOSS:
+                                    multiplier = 3
+                                default:
+                                    break;
+                            }
+
+                            points += basePoints * multiplier
+
                             return
                         }
                     }
@@ -399,7 +458,8 @@ document.addEventListener('DOMContentLoaded', function (e) {
 
                 // if (!alien.destroyed) context.fillRect(j * columnSpace, i * rowSpace, alien.width, alien.height);
 
-                if (!alien.destroyed) context.fillRect(alien.x, alien.y, alien.width, alien.height);
+                if (!alien.destroyed) context.drawImage(alienImage, alien.x, alien.y, alien.width, alien.height)
+                // if (!alien.destroyed) context.fillRect(alien.x, alien.y, alien.width, alien.height);
             }
         }
 
@@ -412,6 +472,8 @@ document.addEventListener('DOMContentLoaded', function (e) {
                 const bunkerParts = bunker[j];
                 for (let k = 0; k < bunkerParts.length; k++) {
                     const bunkerPart = bunkerParts[k];
+
+                    if (!bunkerPart) continue
 
                     context.fillStyle = bunkerPart.color
                     // if (bunkerPart) context.fillRect(i * 100  + (10 * j), 400 + k*10, 10, 10);
@@ -446,6 +508,16 @@ document.addEventListener('DOMContentLoaded', function (e) {
             context.fillStyle = bullet.color
             context.fillRect(bullet.x, bullet.y, bullet.width, bullet.height)
         }
+
+
+        // draw stats
+
+        context.font = "30px Arial";
+        context.fillText("Lives: " + lives, 30, 800);
+
+
+        context.font = "30px Arial";
+        context.fillText("Points: " + points, 300, 800);
     }
 });
 
